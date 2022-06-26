@@ -1,0 +1,221 @@
+clear all; 
+savevar = 0;
+%movar = ["jan";"feb";"dec"];%DJF
+monthvar = ["jan";"feb";"mar";"nov";"dec"];
+level = ["sfc";"975";"950";"925";"900"];
+timeperiod = " 1979 - 2018";
+
+%load lat lon file for "larger" region
+load('/net/home_stu/ograff/latlon_wholeregion.mat');
+count = 0;
+
+for mo = 1:length(movar)
+    count = count +1;
+    mo
+    for l = 1:length(l)
+        l
+        %load in necessary variables 
+        s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_divg.mat');load(s);
+        s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_frontalfreq.mat');load(s);
+        s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_frontaldivg.mat');load(s);
+        s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_nonfrontaldivg.mat');load(s);
+
+        clear s
+        
+        %length of the month used -- use this value for number of times to loop
+        %later in the code
+        molen = size(divg,4); time_size = size(divg,3);
+        
+        %load top 6 meander years from sst index (depending on month)
+        % meanderfile = strcat('/net/home_stu/ograff/paper/sst/data/',movar(n),'/sstindex_new.mat');
+        meanderfile = strcat('/net/home_stu/ograff/paper/sst/data/',movar(mo),'/sstindex_new.mat');
+        load(meanderfile,'index_sst');
+
+        if movar(mo) == "jan"
+            meander_index = find(index_sst <= -0.945); %Jan
+        elseif movar(mo) == "feb"|| movar(n) == "mar"
+            meander_index = find(index_sst <= -.98); %feb
+        elseif movar(mo) == "nov"
+            meander_index = find(index_sst <= -1.08); %feb
+        elseif movar(mo) == "dec"
+            meander_index = find(index_sst <= -.85); %dec
+        end
+        
+        %3d meander variables for the top 6 years
+        meander_divg = zeros(size(lon_area,1),size(lat_area,1),molen*size(meander_index,1));
+        meander_frontalfreq = zeros(size(lon_area,1),size(lat_area,1),molen*size(meander_index,1));
+        b = 0;
+        for n = 1:size(meander_index,1)
+            meander_divg(:,:,b+1:b+molen) = squeeze(divg(:,:,meander_index(n),:));
+            meander_frontalfreq(:,:,b+1:b+molen) = squeeze(frontalfreq(:,:,meander_index(n),:));
+            b = b+molen;
+        end
+        
+        %calcualting frontal/non frontal divergence means based on frontal/nonfrontal presence.
+        meander_frdivg = NaN*zeros(size(lon_area,1),size(lat_area,1),molen*size(meander_index,1));%i think this should be NaN zeros for the ttest
+        meander_nonfrdivg = NaN*zeros(size(lon_area,1),size(lat_area,1),molen*size(meander_index,1));
+        
+        meanmeander_frdivg = zeros(size(lon_area,1),size(lat_area,1));
+        meanmeander_nonfrdivg = zeros(size(lon_area,1),size(lat_area,1));
+        meanderfrontcount = zeros(size(lon_area,1),size(lat_area,1));
+        meandernonfrontcount = zeros(size(lon_area,1),size(lat_area,1));
+        
+        for n = 1:molen*size(meander_index,1)
+            for i = 1:size(lon_area,1)
+                for j = 1:size(lat_area,1)
+                    if meander_frontalfreq(i,j,n) >= 1
+                        meander_frdivg(i,j,n) = meander_divg(i,j,n);
+                        meanmeander_frdivg(i,j) = meander_divg(i,j,n)+meanmeander_frdivg(i,j);
+                        meanderfrontcount(i,j) = meanderfrontcount(i,j) +1;
+                    elseif meander_frontalfreq(i,j,n) < 1
+                        meander_nonfrdivg(i,j,n) = meander_divg(i,j,n);
+                        meanmeander_nonfrdivg(i,j) = meander_divg(i,j,n)+meanmeander_nonfrdivg(i,j);
+                        meandernonfrontcount(i,j) = meandernonfrontcount(i,j) +1;
+                    end
+                end
+            end
+        end
+        
+        meanmeander_frdivg = meanmeander_frdivg./meanderfrontcount;
+        meanmeander_nonfrdivg = meanmeander_nonfrdivg./meandernonfrontcount;
+        
+        %calculating anomalies
+        anom_divg = nanmean(meander_divg,3) - nanmean(divg_climo,3);
+        anom_frdivg = meanmeander_frdivg - climomean_frdivg;
+        anom_nonfrdivg = meanmeander_nonfrdivg - climomean_nonfrdivg;
+        
+        %clear divg frontalfreq
+        %ttest 90%
+        m_divgtest90 = zeros(size(lon_area,1),size(lat_area,1));
+        m_frontaldivgtest90 = zeros(size(lon_area,1),size(lat_area,1));
+        m_nonfrontaldivgtest90 = zeros(size(lon_area,1),size(lat_area,1));
+        %ttest 99%
+        m_divgtest99 = zeros(size(lon_area,1),size(lat_area,1));
+        m_frontaldivgtest99 = zeros(size(lon_area,1),size(lat_area,1));
+        m_nonfrontaldivgtest99 = zeros(size(lon_area,1),size(lat_area,1));
+        
+        for i = 1:size(lon_area,1)
+            for j = 1:size(lat_area,1)
+                h = ttest2(meander_divg(i,j,:), divg_climo(i,j,:), 'Alpha',0.1);
+                m_divgtest90(i,j) = h;
+                h = ttest2(squeeze(meander_frdivg(i,j,:)), squeeze(frdivg_climo(i,j,:)), 'Alpha',0.1);
+                m_frontaldivgtest90(i,j) = h;
+                h = ttest2(meander_nonfrdivg(i,j,:), nonfrdivg_climo(i,j,:), 'Alpha',0.1);
+                m_nonfrontaldivgtest90(i,j) = h;
+                h = ttest2(meander_divg(i,j,:), divg_climo(i,j,:), 'Alpha',0.01);
+                m_divgtest99(i,j) = h;
+                h = ttest2(squeeze(meander_frdivg(i,j,:)), squeeze(frdivg_climo(i,j,:)), 'Alpha',0.01);
+                m_frontaldivgtest99(i,j) = h;
+                h = ttest2(meander_nonfrdivg(i,j,:), nonfrdivg_climo(i,j,:), 'Alpha',0.01);
+                m_nonfrontaldivgtest99(i,j) = h;
+                
+                %very strange- when I use these --- old ttests look not as terrible but makes sense bc different data
+            end
+        end
+        
+        %dummy matricies to hold a value for if it's is significant
+        x_mdivg90 = zeros(1,1); y_mdivg90 = zeros(1,1);
+        x_mfrontaldivg90 = zeros(1,1); y_mfrontaldivg90 = zeros(1,1);
+        x_mnofrontaldivg90 = zeros(1,1); y_mnofrontaldivg90 = zeros(1,1);
+        x_mdivg99 = zeros(1,1); y_mdivg99 = zeros(1,1);
+        x_mfrontaldivg99 = zeros(1,1); y_mfrontaldivg99 = zeros(1,1);
+        x_mnofrontaldivg99 = zeros(1,1); y_mnofrontaldivg99 = zeros(1,1);
+        for i = 1:size(lon_area,1)
+            for j = 1:size(lat_area,1)
+                if m_divgtest90(i,j) == 1
+                    x_mdivg90(i,j) = lon_area(i);
+                    y_mdivg90(i,j) = lat_area(j);
+                end
+                if m_frontaldivgtest90(i,j) == 1
+                    x_mfrontaldivg90(i,j) = lon_area(i);
+                    y_mfrontaldivg90(i,j) = lat_area(j);
+                end
+                if m_nonfrontaldivgtest90(i,j) == 1
+                    x_mnofrontaldivg90(i,j) = lon_area(i);
+                    y_mnofrontaldivg90(i,j) = lat_area(j);
+                end
+                if m_divgtest99(i,j) == 1
+                    x_mdivg99(i,j) = lon_area(i);
+                    y_mdivg99(i,j) = lat_area(j);
+                end
+                if m_frontaldivgtest99(i,j) == 1
+                    x_mfrontaldivg99(i,j) = lon_area(i);
+                    y_mfrontaldivg99(i,j) = lat_area(j);
+                end
+                if m_nonfrontaldivgtest99(i,j) == 1
+                    x_mnofrontaldivg99(i,j) = lon_area(i);
+                    y_mnofrontaldivg99(i,j) = lat_area(j);
+                end
+            end
+        end
+        
+        load coast;
+        figure;set(gcf,'color','w');
+        %Plotting the mean values
+        nb = -3e-5; pb = 3e-5; %upper and lower caxis bounds
+        subplot(2,3,1);
+        pcolor(lon_area, lat_area,nanmean(divg_climo,3)'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean '+level(l)+ ' Divergence ',' '+movar(mo)+timeperiod]);
+        subplot(2,3,2);
+        pcolor(lon_area, lat_area,climomean_frdivg'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean '+level(l)+ ' Frontal Divergence ',' '+movar(mo)+timeperiod]);
+        subplot(2,3,3);
+        pcolor(lon_area, lat_area,climomean_nonfrdivg'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean '+level(l)+ ' Nonfrontal Divergence ',' '+movar(mo)+timeperiod]);
+        subplot(2,3,4);
+        pcolor(lon_area, lat_area,nanmean(meander_divg,3)'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean Meander Years '+level(l)+' ', 'Divergence, '+movar(mo)]);
+        
+        subplot(2,3,5);
+        pcolor(lon_area, lat_area,meanmeander_frdivg'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean Meander Years '+level(l)+' ', 'Frontal Divergence, '+movar(mo)]);
+        subplot(2,3,6);
+        pcolor(lon_area, lat_area,meanmeander_nonfrdivg'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean Meander Years '+level(l)+' ', 'Nonfrontal Divergence, '+movar(mo)]);
+        
+        %Plotting the anomalies
+        nb = -3e-5; pb = 3e-5;
+        figure;set(gcf,'color','w');
+        subplot(2,3,1);
+        pcolor(lon_area, lat_area,anom_divg'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(x_mdivg90,y_mdivg90,'.k','MarkerSize',2);%caxis([ncb pcb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean Meander Years '+level(l)+ ' Divergence ','Anomaly, 90 % Significance, '+movar(mo)]);
+        subplot(2,3,2);
+        pcolor(lon_area, lat_area,anom_frdivg'); shading interp; cb= colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(x_mfrontaldivg90,y_mfrontaldivg90,'.k','MarkerSize',2);%caxis([ncb pcb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean Meander Years '+level(l)+ ' Frontal Divergence','Anomaly, 90 % Significance, '+movar(mo)]);
+        
+        subplot(2,3,3);
+        pcolor(lon_area, lat_area,anom_nonfrdivg'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(x_mnofrontaldivg90,y_mnofrontaldivg90,'.k','MarkerSize',2);%caxis([ncb pcb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean Meander Years '+level(l)+ ' Nonfrontal Divergence','Anomaly, 90 % Significance, '+movar(mo)]);
+        
+        %Plotting the anomalies 99%
+        subplot(2,3,4);
+        pcolor(lon_area, lat_area,anom_divg'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(x_mdivg99,y_mdivg99,'.k','MarkerSize',2);%caxis([ncb pcb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean Meander Years '+level(l)+ ' Divergence ','Anomaly, 99 % Significance, '+movar(mo)]);
+        subplot(2,3,5);
+        pcolor(lon_area, lat_area,anom_frdivg'); shading interp; cb= colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(x_mfrontaldivg99,y_mfrontaldivg99,'.k','MarkerSize',2);%caxis([ncb pcb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean Meander Years '+level(l)+ ' Frontal Divergence','Anomaly, 99 % Significance, '+movar(mo)]);        
+        subplot(2,3,6);
+        pcolor(lon_area, lat_area,anom_nonfrdivg'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]);
+        hold on; plot(x_mnofrontaldivg99,y_mnofrontaldivg99,'.k','MarkerSize',2);%caxis([ncb pcb]);
+        hold on; plot(long,lat,'k');ylabel(cb,level(l)+' Wind Divergence (s^{-1})');axis([133 160 28 45]);
+        title(['Mean Meander Years '+level(l)+ ' Nonfrontal Divergence','Anomaly, 99 % Significance, '+movar(mo)]);
+        
+        clear divg divg_climo frontalfreq frontalfreq_climo climomean_nonfrdivg climomean_frdivg
+    end
+end
