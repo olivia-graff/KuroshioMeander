@@ -13,10 +13,11 @@ molen = [744;696;744;720;744]; %timesteps in each month * 24 (hourly data)
 time_size = 40; 
 count = 0; 
 %time_size = 32;%sanity check 
-for mo = 2%1:3 %jan,feb,dec
+
+for mo = mo = 1:length(movar)
     count = count +1;
     mo
-    for l = 5%:5%level
+    for l = 1:length(level) 
         l
         %loading divergence & frontal presence files 
         s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_divg.mat');load(s,'divg_climo');
