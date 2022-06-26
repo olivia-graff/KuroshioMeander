@@ -1,0 +1,112 @@
+clear all; 
+savevar = 1; 
+%load in divg and separate out into frontal/nonfrontal divg 
+%load lat lon file for "larger" region
+load('/net/home_stu/ograff/latlon_wholeregion.mat'); 
+% movar = "feb"; %testing a singular month/level 
+%level = "950"; 
+monthvar = ["jan";"feb";"mar";"nov";"dec"];
+level = ["sfc";"975";"950";"925";"900"];
+%movar = ["jan";"feb";"dec"];
+%level = ["sfc";"975";"950";"925";"900"];
+molen = [744;696;744;720;744]; %timesteps in each month * 24 (hourly data) 
+time_size = 40; 
+count = 0; 
+%time_size = 32;%sanity check 
+for mo = 2%1:3 %jan,feb,dec
+    count = count +1;
+    mo
+    for l = 5%:5%level
+        l
+        %loading divergence & frontal presence files 
+        s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_divg.mat');load(s,'divg_climo');
+        s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_frontalfreq.mat');load(s,'frontalfreq_climo');
+        
+%         %for sanity check -- cutting variables down to 1979-2010. getting
+%         %rid of the last 5568 timesteps need timesteps (1:22272)
+%         divgsanity = divg_climo(:,:,1:22272);
+%         frontalfreqsanity = frontalfreq_climo(:,:,1:22272); 
+%         
+%         divg_climo = divgsanity; frontalfreq_climo = frontalfreqsanity;
+        
+        %Storing Frontal/Nonfrontal divergence values & finding mean values
+        %for each individual grid space based on frontal/nonfrontal presence
+        % **tested below the loop to verify calulations are correct**
+        
+        frdivg_climo = NaN*zeros(size(lon_area,1),size(lat_area,1),time_size*molen(mo));
+        nonfrdivg_climo = NaN*zeros(size(lon_area,1),size(lat_area,1),time_size*molen(mo));
+        climomean_frdivg = zeros(size(lon_area,1),size(lat_area,1));
+        climomean_nonfrdivg = zeros(size(lon_area,1),size(lat_area,1));
+        frontcount = zeros(size(lon_area,1),size(lat_area,1));
+        nonfrontcount = zeros(size(lon_area,1),size(lat_area,1));
+
+        for n = 1:(time_size*molen(mo))
+            for i = 1:size(lon_area,1)
+                for j = 1:size(lat_area,1)
+                    if frontalfreq_climo(i,j,n) >= 1
+                        frdivg_climo(i,j,n) = divg_climo(i,j,n);
+                        climomean_frdivg(i,j) = divg_climo(i,j,n)+climomean_frdivg(i,j);
+                        frontcount(i,j) = frontcount(i,j) +1;
+                    elseif frontalfreq_climo(i,j,n) < 1
+                        nonfrdivg_climo(i,j,n) = divg_climo(i,j,n);
+                        climomean_nonfrdivg(i,j) = divg_climo(i,j,n)+climomean_nonfrdivg(i,j);
+                        nonfrontcount(i,j) = nonfrontcount(i,j) +1;
+                    end
+                end
+            end
+        end
+        
+        %calculate mean based on # of fronts in each grid space (since
+        %each grid space experiences a different number of frontal/nonfrontal instance)
+        climomean_frdivg = climomean_frdivg./frontcount;
+        climomean_nonfrdivg = climomean_nonfrdivg./nonfrontcount;
+        
+        %test plotting 
+        figure(count); %mean divg
+        load coast;
+        subplot(1,3,1)
+        pcolor(lon_area, lat_area,nanmean(divg_climo,3)'); shading interp; cb = colorbar; cmocean balance;caxis([-3e-5 3e-5]);
+        hold on; plot(long,lat,'k');axis([133 160 28 45]);ylabel(cb,level(l) +' Wind Divergence (s^{-1})');
+        title('Mean '+level(l)+' Divergence '+movar(mo)+'  1979-2018');
+        
+        subplot(1,3,2)
+        pcolor(lon_area, lat_area,climomean_frdivg'); shading interp; cb = colorbar; cmocean balance;caxis([-3e-5 3e-5]);
+        hold on; plot(long,lat,'k');axis([133 160 28 45]);ylabel(cb,level(l) +' Wind Divergence (s^{-1})');
+        title(level(l)+' Frontal Divergence '+movar(mo)+'  1979-2018');
+        
+        subplot(1,3,3)
+        pcolor(lon_area, lat_area,climomean_nonfrdivg'); shading interp; cb = colorbar; cmocean balance;caxis([-3e-5 3e-5]);
+        hold on; plot(long,lat,'k');axis([133 160 28 45]);ylabel(cb,level(l) +' Wind Divergence (s^{-1})');
+        title(level(l)+' NonFrontal Divergence '+movar(mo)+'  1979-2018');
+        
+        if savevar == 1
+            s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_frontaldivg.mat');
+            save(s,'climomean_frdivg','frdivg_climo','frontcount');
+            s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_nonfrontaldivg.mat');
+            save(s,'climomean_nonfrdivg','nonfrdivg_climo','nonfrontcount');
+        end
+        clearvars -except lon_area lat_area movar level mo l savevar time_size molen count
+    end
+end
+
+%test plot 
+figure;
+for n = 1:10:10000
+contour(lon_area,lat_area,frontalfreq_climo(:,:,n)',[1 1]); 
+drawnow;
+hold off
+end
+
+
+% %Test -- Passed. (2 plots are equal to one another) 
+% testdivgmean = ((climomean_nonfrdivg.*nonfrontcount) + (climomean_frdivg.* frontcount))./(nonfrontcount + frontcount);
+% figure; load coast; 
+% nb = -3e-5; pb = 3e-5; 
+% pcolor(lon_area, lat_area,testdivgmean'); shading interp; cb = colorbar; cmocean balance;caxis([nb pb]); 
+% hold on; plot(long,lat,'k');axis([133 160 28 45]);ylabel(cb,level+' Wind Divergence (s^{-1})');
+% title('Mean '+level+ ' Divergence, test feb 1979-2018'); 
+% 
+% figure; load coast; 
+% pcolor(lon_area, lat_area,nanmean(divg_climo,3)'); shading interp; cb = colorbar;cmocean balance;caxis([nb pb]); 
+% hold on; plot(long,lat,'k');axis([133 160 28 45]);ylabel(cb,level+' Wind Divergence (s^{-1})');
+% title('Mean '+level+ ' Divergence, feb 1979-2018'); 
