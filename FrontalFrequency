@@ -1,0 +1,90 @@
+clear all; 
+savevar = 0;
+load('/net/home_stu/ograff/latlon_wholeregion.mat');
+%movar = ["jan";"feb";"dec"];m = ["01";"02";"12"]; %DJF
+movar = ["jan";"feb";"dec""mar";"nov"];%months used throughout 
+m = ["01";"02";"03";"11";"12"]; 
+level = ["sfc";"975";"950";"925";"900"];%levels in the atmosphere used 
+[Lat,Lon] = meshgrid(lat_area,lon_area);
+land = island(Lat,Lon);
+yearstart = 1979; yearend = 2018; 
+time_size = yearend-yearstart+1; 
+
+%looping through all months/levels and storing frontal presence based of
+%previously calculated and stored atmospheric fronts (F-Diagnostic) 
+for l = 1:length(level) 
+    l
+    for mo = 1:length(movar)
+        mo
+        ff = 0; %resetting for each month
+        frontalfreq_climo = zeros(size(lon_area,1),size(lat_area,1),1); 
+        for year = yearstart:yearend
+            %finding/opening each frontal file 
+            file1 = '/net/home_stu/ograff/Fronts/';
+            levfile = level(l);
+            file2 = num2str(year);
+            file3 = '-';
+            file4 = m(mo);%finds str value of the m array above
+            file5 = '.mat';
+            file = strcat(file1,levfile,'/',file2,file3,file4,file5)
+            
+            %loading the frontal file/data based on level
+            if level(l) == "sfc"
+                load(file,'Fsfc');F = Fsfc;
+            elseif level(l) == "975"
+                load(file,'F975');F = F975;
+            elseif level(l) == "950"
+                load(file,'F950');F = F950;
+            elseif level(l) == "925"
+                load(file,'F925');F = F925;
+            elseif level(l) == "900"
+                load(file,'F900');F = F900;
+            end
+            
+            for i = 1:size(F,3)
+                ff = ff +1;
+                frontalfreq_climo(:,:,ff) = F(:,:,i);
+            end
+            %have to do this to account for leap feb but only in the sfc fronts
+            %simply do the the data structure
+            if file4 == "02" && level(l) == "sfc"
+                if mod(year,4) > 0 %nonleapyears
+                    frontalfreq_climo(:,:,ff+1:ff+24) = NaN;%index 673-696 (nonleap years have 672 timesteps)
+                    ff = ff+24;
+                end
+            end
+            %clear F
+        end
+        
+        %adjusting for leap years/data structure 
+        if file4 == "02"
+            molen = 696;
+        else
+            molen = size(F,3);
+        end
+        %Rearrange to a 4d variable
+        frontalfreq = NaN*zeros(size(lon_area,1),size(lat_area,1),time_size,molen);
+        b = 0;
+        for n = 1:time_size
+            frontalfreq(:,:,n,1:molen) = frontalfreq_climo(:,:,b+1:b+molen);
+            b = b+molen;
+        end
+        
+        %test plotting
+        figure(1); %mean divg
+        load coast;
+        for n = 1:50
+            contour(lon_area, lat_area,frontalfreq_climo(:,:,n)',[1 1]);
+            hold on; plot(long,lat,'k');axis([133 160 28 45]);
+            title(level(l)+' Frontal Frequency, '+movar(mo));
+            drawnow; hold off;
+        end
+        
+        %saving the variables
+        if savevar == 1
+            s = strcat('/net/home_stu/ograff/chapter2/data/',level(l),'/',movar(mo),'_frontalfreq.mat');
+            save(s,'frontalfreq','frontalfreq_climo');
+        end
+        clear frontalfreq frontalfreq_climo        
+    end
+end
